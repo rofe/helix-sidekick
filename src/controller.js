@@ -54,7 +54,7 @@ export function inject() {
         } catch (e) {
           window.clearInterval(checkState);
         }
-      }, 1000);
+      }, 500);
     } else {
       setDisplay(false);
     }
