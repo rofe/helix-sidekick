@@ -51,7 +51,8 @@ export async function getMountpoints(owner, repo, ref) {
 export function getConfig(configs, url) {
   const checkHost = new URL(url).host;
   return configs.find(({ owner, repo, host, mountpoints }) => {
-    return ((host && checkHost === host) // production host
+    return (checkHost === 'localhost:3000' // local development
+      || (host && checkHost === host) // production host
       || checkHost.endsWith(`${repo}--${owner}.hlx.live`) // outer CDN
       || checkHost.endsWith(`${repo}--${owner}.hlx.page`) // inner CDN
       || mountpoints // editor
