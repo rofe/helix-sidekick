@@ -118,13 +118,22 @@ function editConfig(i) {
     };
     const buttons = editor.querySelectorAll('button');
     // wire save button
-    buttons[0].addEventListener('click', () => {
+    buttons[0].addEventListener('click', async () => {
       Object.keys(config).forEach((key) => {
         const field = document.getElementById(`edit-${key}`);
         if (field) {
           config[key] = field.value;
         }
       });
+      const { owner, repo, ref } = getGitHubSettings(config.giturl);
+      const mountpoints = await getMountpoints(owner, repo, ref);
+      hlxSidekickConfigs[i] = {
+        ...config,
+        owner,
+        repo,
+        ref,
+        mountpoints,
+      };
       chrome.storage.sync.set({
         hlxSidekickConfigs
       }, () => {
