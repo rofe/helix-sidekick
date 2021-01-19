@@ -336,8 +336,7 @@ section.config {
   display: flex;
   flex-flow: row nowrap;
   align-items: center;
-  padding-left: 0;
-  padding-right: 24px;
+  padding: 12px 24px 12px 0;
   border-radius: 5px;
   border: solid 1px rgb(var(--border-color));
 }
@@ -356,6 +355,7 @@ section.config > div:first-of-type {
 
 section.config > div:nth-of-type(2) {
   width: fit-content;
+  max-width: 100px;
   text-align: right;
 }
 
@@ -377,6 +377,19 @@ section.config p {
   overflow-x: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+section.config input.favorite {
+  margin-top: 3px;
+  margin-left: 10px;
+}
+
+section.config input.favorite::after {
+  vertical-align: top;
+  content: "__MSG_config_project_favorite__";
+  margin-left: 20px;
+  font-size: 0.75rem;
+  color: rgba(var(--text-color), 0.5);
 }
 
 #configEditor {

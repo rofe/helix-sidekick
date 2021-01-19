@@ -55,6 +55,7 @@ async function addConfig({ giturl, host, project }, cb) {
   getState(({ configs }) => {
     if (!configs.find((cfg) => owner === cfg.owner && repo === cfg.repo && ref === cfg.ref)) {
       configs.push({
+        id: `${owner}/${repo}@${ref}`,
         giturl,
         owner,
         repo,
@@ -175,16 +176,17 @@ function deleteConfig(i) {
 
 function drawLink(url) {
   let text = url;
+  if (!url.startsWith('https://')) url = `https://${url}`;
   if (url.includes('sharepoint')) text = 'SharePoint';
-  if (url.includes('drive')) text = 'Google Drive';
-  return `<a href="https://${url}/" title="${url}" target="_blank">${text}</a>`;
+  if (url.includes('drive.google.com')) text = 'Google Drive';
+  return `<a href="${url}/" title="${url}" target="_blank">${text}</a>`;
 }
 
 function drawConfigs() {
   getState(({ configs = [] }) => {
     const container = document.getElementById('configs');
     container.innerHTML = '';
-    configs.forEach(({ owner, repo, ref, mountpoints, host, project }, i) => {
+    configs.forEach(({ owner, repo, ref, mountpoints, host, project }) => {
       const innerHost = getInnerHost(owner, repo, ref);
       const section = document.createElement('section');
       section.className = 'config';

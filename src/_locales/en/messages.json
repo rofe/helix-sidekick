@@ -24,7 +24,7 @@
     "message": "Projects"
   },
   "config_project_empty": {
-    "message": "No projects configured yet"
+    "message": "You haven't added any projects yet."
   },
   "config_project_exists": {
     "message": "A configuration for this project already exists!"
@@ -37,6 +37,9 @@
   },
   "config_project_mountpoints": {
     "message": "Content"
+  },
+  "config_project_pick": {
+    "message": "Pick a project:"
   },
   "config_shareurl_title": {
     "message": "Add via sharing URL"

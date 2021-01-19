@@ -48,33 +48,40 @@ export async function getMountpoints(owner, repo, ref) {
   return [];
 }
 
-export function getConfig(configs, url) {
+export function getConfigMatches(configs, url) {
   const checkHost = new URL(url).host;
-  return configs.find(({ owner, repo, host, mountpoints }) => {
-    return (checkHost === 'localhost:3000' // local development
+  const matches = []
+  configs.forEach(({ id, owner, repo, ref, host, mountpoints }) => {
+    const match = (checkHost === 'localhost:3000' // local development
       || (host && checkHost === host) // production host
       || checkHost.endsWith(`${repo}--${owner}.hlx.live`) // outer CDN
-      || checkHost.endsWith(`${repo}--${owner}.hlx.page`) // inner CDN
+      || checkHost.endsWith(`${ref !== 'master' ? `${ref}--` : ''}${repo}--${owner}.hlx.page`) // inner CDN
       || mountpoints // editor
         .map((mp) => {
           const mpUrl = new URL(mp);
           return [mpUrl.host, mpUrl.pathname];
         })
-        .find(([mpHost, mpPath]) => {
+        .some(([mpHost, mpPath]) => {
           if (checkHost === mpHost) {
-            if (mpHost.includes('sharepoint.com')) {
-              if (mpPath.startsWith('/sites')) {
-                // sharepoint, check for site name in path
-                const site = encodeURIComponent(mpPath.split('/')[2]);
-                return new URL(url).pathname.includes(`:/r/sites/${site}/`);
-              }
+            if (mpHost.includes('sharepoint.com') && mpPath.startsWith('/sites')) {
+              // sharepoint, check for site name in path
+              const site = encodeURIComponent(mpPath.split('/')[2]);
+              return new URL(url).pathname.includes(`:/r/sites/${site}/`);
+            } else if (checkHost === 'docs.google.com') {
+              return true;
             }
-            // assume host check is sufficient
+          }
+          if (checkHost === 'docs.google.com' && mpHost === 'drive.google.com') {
+            // gdrive, for now host matching only
             return true;
           }
           return false;
         }));
+    if (match) {
+      matches.push(id);
+    }
   });
+  return matches;
 }
 
 export function getState(cb) {

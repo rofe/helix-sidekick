@@ -8,8 +8,9 @@
 	"description": "__MSG_description__",
 	"permissions": [
 		"storage",
-    "tabs",
-    "activeTab",
+	  "tabs"
+  ],
+	"optional_permissions": [
     "https://*/*",
     "http://localhost:3000/*"
   ],
@@ -20,20 +21,20 @@
     "utils.js",
     "controller.js"
   ],
-	"browser_action": {
+	"page_action": {
     "default_title": "Helix Sidekick",
 		"default_icon": {
 			"16": "./icons/helix_logo_16.png",
 			"32": "./icons/helix_logo_32.png",
 			"48": "./icons/helix_logo_48.png",
 			"128": "./icons/helix_logo_128.png"
-		}
+    }
 	},
   "commands": {
-    "_execute_browser_action": {
+    "_execute_page_action": {
       "suggested_key": {
-        "default": "Ctrl+Shift+5",
-        "mac": "MacCtrl+Shift+5"
+        "default": "Ctrl+Shift+H",
+        "mac": "MacCtrl+Shift+H"
       },
       "description": "__MSG_description_shortcut__"
     }
