@@ -79,7 +79,6 @@ function injectSidekick(config, display) {
   window.hlxSidekickCheckState = window.setInterval(() => {
     try {
       if (document.querySelector(".hlx-sk-hidden") && display) {
-        console.log('detected closing!');
         setDisplay(false, () => {;
           window.clearInterval(window.hlxSidekickCheckState);
         });
