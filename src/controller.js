@@ -29,16 +29,20 @@ function pickConfigByClick({ target }) {
   removeConfigPicker();
 }
 
-function pickConfigByKey(e) {
-  if (e.keyCode > 48 && e.keyCode < 58) {
+function pickConfigByKey({ ctrlKey, shiftKey, key, keyCode }) {
+  console.log(ctrlKey, shiftKey, key);
+  if (!ctrlKey || !shiftKey) return;
+  if (keyCode > 48 && keyCode < 58) {
     // number between 1 - 9
-    const num = parseInt(e.key);
+    const num = parseInt(key);
     try {
       // get config id from button
       inject(document.querySelectorAll('.hlx-sk > button.config')[num - 1].id);
       removeConfigPicker();
-    } catch (e) {}
-  } else if (e.key === 'Escape') {
+    } catch (e) {
+      console.log('Error', e.message);
+    }
+  } else if (key === 'Escape') {
     setDisplay(false);
     removeConfigPicker();
   }
@@ -112,7 +116,8 @@ function injectConfigPicker(configs, config, matches, display) {
       const btn = document.createElement('button');
       btn.id = `${id}`;
       btn.className = 'config';
-      btn.textContent = `${project || id} (${i+1})`;
+      btn.textContent = project || id;
+      btn.title = `(Ctrl+Shift+${i+1})`;
       btn.addEventListener('click', pickConfigByClick);
       picker.appendChild(btn);
     });
@@ -126,6 +131,7 @@ function injectConfigPicker(configs, config, matches, display) {
     });
     picker.appendChild(closeBtn);
     document.body.append(picker);
+    picker.querySelector('button').focus();
     document.addEventListener('keyup', pickConfigByKey);
   } else if (!display) {
     removeConfigPicker();
