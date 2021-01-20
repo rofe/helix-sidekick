@@ -22,7 +22,7 @@
     "controller.js"
   ],
 	"page_action": {
-    "default_title": "Helix Sidekick",
+    "default_title": "__MSG_title__",
 		"default_icon": {
 			"16": "./icons/helix_logo_16.png",
 			"32": "./icons/helix_logo_32.png",

@@ -5,11 +5,8 @@
   "description_shortcut": {
     "message": "Toggles Helix Sidekick"
   },
-  "title_show": {
-    "message": "Show Helix Sidekick (Ctrl + Shift + 5)"
-  },
-  "title_hide": {
-    "message": "Hide Helix Sidekick (Ctrl + Shift + 5)"
+  "title": {
+    "message": "Helix Sidekick (Toggle with Ctrl+Shift+H)"
   },
   "save": {
     "message": "Save"
