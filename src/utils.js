@@ -66,7 +66,7 @@ export function getConfigMatches(configs, url) {
             if (mpHost.includes('sharepoint.com') && mpPath.startsWith('/sites')) {
               // sharepoint, check for site name in path
               const site = encodeURIComponent(mpPath.split('/')[2]);
-              return new URL(url).pathname.includes(`:/r/sites/${site}/`);
+              return new URL(url).pathname.includes(`/sites/${site}/`);
             } else if (checkHost === 'docs.google.com') {
               return true;
             }
