@@ -37,7 +37,7 @@ function getSidekickSettings(sidekickurl) {
 }
 
 function getInnerHost(owner, repo, ref) {
-  return `${ref === 'master' ? '' : `${ref}--`}${repo}--${owner}.hlx.page`;
+  return `${['master', 'main'].includes(ref) ? '' : `${ref}--`}${repo}--${owner}.hlx.page`;
 }
 
 function validShareURL(shareurl) {

@@ -55,7 +55,7 @@ export function getConfigMatches(configs, url) {
     const match = (checkHost === 'localhost:3000' // local development
       || (host && checkHost === host) // production host
       || checkHost.endsWith(`${repo}--${owner}.hlx.live`) // outer CDN
-      || checkHost.endsWith(`${ref !== 'master' ? `${ref}--` : ''}${repo}--${owner}.hlx.page`) // inner CDN
+      || checkHost.endsWith(`${!['master', 'main'].includes(ref) ? `${ref}--` : ''}${repo}--${owner}.hlx.page`) // inner CDN
       || mountpoints // editor
         .map((mp) => {
           const mpUrl = new URL(mp);
