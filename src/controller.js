@@ -76,21 +76,23 @@ function injectSidekick(config, display) {
   }
 })();`;
 
-  // monitor if user manually closes sidekick
-  if (window.hlxSidekickCheckState) {
-    window.clearInterval(window.hlxSidekickCheckState);
-  }
-  window.hlxSidekickCheckState = window.setInterval(() => {
-    try {
-      if (document.querySelector(".hlx-sk-hidden") && display) {
-        setDisplay(false, () => {;
-          window.clearInterval(window.hlxSidekickCheckState);
-        });
-      }
-    } catch (e) {
+  if (display) {
+    // monitor if user manually closes sidekick
+    if (window.hlxSidekickCheckState) {
       window.clearInterval(window.hlxSidekickCheckState);
     }
-  }, 500);
+    window.hlxSidekickCheckState = window.setInterval(() => {
+      try {
+        if (document.querySelector(".hlx-sk-hidden") && display) {
+          setDisplay(false, () => {;
+            window.clearInterval(window.hlxSidekickCheckState);
+          });
+        }
+      } catch (e) {
+        window.clearInterval(window.hlxSidekickCheckState);
+      }
+    }, 500);
+  }
 }
 
 function injectConfigPicker(configs, config, matches, display) {
@@ -144,8 +146,15 @@ export function inject(id = window.hlxSidekickConfigId) {
       // remember user choice
       window.hlxSidekickConfigId = id;
     }
+    if (!display && !window.hlxSidekickCheckState) {
+      // do not eagerly inject sidekick
+      return;
+    }
     const matches = id ? [id] : getConfigMatches(configs, window.location.href);
-    if (matches.length === 0) return;
+    if (matches.length === 0) {
+      // no matching configs
+      return;
+    }
     // get config if single match
     const config = matches.length === 1
       ? configs.find((config) => config.id === matches[0])
