@@ -30,7 +30,6 @@ function pickConfigByClick({ target }) {
 }
 
 function pickConfigByKey({ ctrlKey, shiftKey, key, keyCode }) {
-  console.log(ctrlKey, shiftKey, key);
   if (!ctrlKey || !shiftKey) return;
   if (keyCode > 48 && keyCode < 58) {
     // number between 1 - 9
@@ -48,50 +47,18 @@ function pickConfigByKey({ ctrlKey, shiftKey, key, keyCode }) {
   }
 }
 
-function injectSidekick(config, display) {
+async function injectSidekick(config, display) {
+  if (!config) return;
   // reduce config to only include properties relevant for sidekick
-  config = config
-    ? Object.fromEntries(Object.entries(config)
-        .filter(([k]) => ['owner', 'repo', 'ref', 'host', 'project'].includes(k)))
-    : undefined;
-  let ctrl = document.getElementById('hlx-sk-ctrl');
-  if (ctrl) {
-    ctrl.remove();
-  }
-  // inject sidekick
-  ctrl = document.head.appendChild(document.createElement('script'));
-  ctrl.id = 'hlx-sk-ctrl';
-  ctrl.textContent = `/* ** Helix Sidekick Controller ** */
-(() => {
+  config = Object.fromEntries(Object.entries(config)
+    .filter(([k]) => ['owner', 'repo', 'ref', 'host', 'project', 'pluginHost'].includes(k)));
   window.hlx = window.hlx || {};
-  if (!window.hlx.sidekick) {
-    ${config ? `
-    window.hlx.sidekickConfig = ${JSON.stringify(config)};
-    const script = document.createElement("script");
-    script.src = "https://www.hlx.page/tools/sidekick/app.js";
-    ${!display ? 'script.addEventListener("load", () => window.hlx.sidekick.toggle())' : ''}
-    document.head.appendChild(script);` : ''}
-  } else if (${display ? '' : '!'}document.querySelector(".hlx-sk.hlx-sk-hidden")) {
-    window.hlx.sidekick.toggle();
-  }
-})();`;
-
-  if (display) {
-    // monitor if user manually closes sidekick
-    if (window.hlxSidekickCheckState) {
-      window.clearInterval(window.hlxSidekickCheckState);
-    }
-    window.hlxSidekickCheckState = window.setInterval(() => {
-      try {
-        if (document.querySelector(".hlx-sk-hidden") && display) {
-          setDisplay(false, () => {;
-            window.clearInterval(window.hlxSidekickCheckState);
-          });
-        }
-      } catch (e) {
-        window.clearInterval(window.hlxSidekickCheckState);
-      }
-    }, 500);
+  if (!window.hlx.sidekick && display) {
+    // inject sidekick
+    window.hlx.sidekickConfig = config;
+    await import(chrome.runtime.getURL('./sidekick/app.js'));
+  } else if (window.hlx.sidekick) {
+    window.hlx.sidekick[`${display ? 'show' : 'hide'}`]();
   }
 }
 
@@ -145,10 +112,6 @@ export function inject(id = window.hlxSidekickConfigId) {
     if (id) {
       // remember user choice
       window.hlxSidekickConfigId = id;
-    }
-    if (!display && !window.hlxSidekickCheckState) {
-      // do not eagerly inject sidekick
-      return;
     }
     const matches = id ? [id] : getConfigMatches(configs, window.location.href);
     if (matches.length === 0) {

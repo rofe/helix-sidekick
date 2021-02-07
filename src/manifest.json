@@ -18,8 +18,9 @@
 		"page": "background.html"
   },
   "web_accessible_resources": [
-    "utils.js",
-    "controller.js"
+    "sidekick/*",
+    "controller.js",
+    "utils.js"
   ],
 	"page_action": {
     "default_title": "__MSG_title__",
