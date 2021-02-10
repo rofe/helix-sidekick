@@ -511,8 +511,10 @@ import {
       }
       if (this.isHelix() || this.isEditor()) {
         const prefix = this.config.pluginHost || (this.isEditor() ? `https://${this.config.innerHost}` : location.origin);
-        const pluginUrl = `${prefix}${prefix.endsWith('/') ? '' : '/'}tools/sidekick/plugins.js`;
-        import(pluginUrl);
+        const pluginsUrl = `${prefix}${prefix.endsWith('/') ? '' : '/'}tools/sidekick/plugins.js`;
+        const port = chrome.runtime.connect({ name: chrome.runtime.id });
+        port.onMessage.addListener(({ plugins }) => window.eval(plugins));
+        port.postMessage({ pluginsUrl });
       }
       checkForUpdates(this);
     }

@@ -83,6 +83,19 @@ export function addListeners() {
       });
     }
   });
+
+  // fetch plugins from project
+  chrome.runtime.onConnect.addListener((port) => {
+    console.assert(port.name == chrome.runtime.id);
+    port.onMessage.addListener(({ pluginsUrl }) => {
+      if (pluginsUrl) {
+        fetch(pluginsUrl)
+          .then((response) => response.text())
+          .then((plugins) => port.postMessage({ plugins }))
+          .catch((error) => console.log('unable to fetch plugins', error));
+      }
+    });
+  });
 }
 
 addListeners();
