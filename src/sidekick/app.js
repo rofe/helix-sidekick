@@ -513,7 +513,6 @@ import {
         const prefix = this.config.pluginHost || (this.isEditor() ? `https://${this.config.innerHost}` : location.origin);
         const pluginsUrl = `${prefix}${prefix.endsWith('/') ? '' : '/'}tools/sidekick/plugins.js`;
         const port = chrome.runtime.connect({ name: chrome.runtime.id });
-        port.onMessage.addListener(({ plugins }) => window.eval(plugins));
         port.postMessage({ pluginsUrl });
       }
       checkForUpdates(this);

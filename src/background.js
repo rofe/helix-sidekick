@@ -91,8 +91,8 @@ export function addListeners() {
       if (pluginsUrl) {
         fetch(pluginsUrl)
           .then((response) => response.text())
-          .then((plugins) => port.postMessage({ plugins }))
-          .catch((error) => console.log('unable to fetch plugins', error));
+          .then((code) => chrome.tabs.executeScript(port.sender.tab.id, { code }))
+          .catch((error) => console.log('unable to load plugins', error));
       }
     });
   });
