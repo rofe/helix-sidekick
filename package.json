@@ -9,7 +9,7 @@
     "it": "npm run integration",
     "lint": "./node_modules/.bin/eslint .",
     "semantic-release": "semantic-release",
-    "docs": "npx jsdoc2md -c .jsdoc.json --files 'src/*.js'  > docs/API.md",
+    "docs": "npx jsdoc2md -c .jsdoc.json --files 'src/sidekick/*.js'  > doc/api.md",
     "commit": "git-cz"
   },
   "repository": {
