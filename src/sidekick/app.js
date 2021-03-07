@@ -72,6 +72,15 @@ import {
    */
 
   /**
+   * @typedef {Object} publishResponse
+   * @description The response object for a publish action.
+   * @prop {boolean} ok     True if publish action was successful, else false
+   * @prop {string}  status The status text returned by the publish action
+   * @prop {Object}  json   The JSON object returned by the publish action
+   * @prop {string}  path   The path of the published page
+   */
+
+  /**
    * @external
    * @name "window.hlx.sidekick"
    * @type {Sidekick}
@@ -96,31 +105,16 @@ import {
     const innerPrefix = ref && !['master', 'main'].includes(ref)
       ? `${ref}--${outerPrefix}`
       : outerPrefix;
+    const purgeHost = `${ref}--${outerPrefix}.hlx.page`;
     const publicHost = host && host.startsWith('http') ? new URL(host).host : host;
-    // get hlx domain from script src
-    let innerHost;
-    const script = Array.from(document.querySelectorAll('script[src]'))
-      .filter((include) => include.src.endsWith('sidekick/app.js'))[0];
-    if (script) {
-      const scriptHost = new URL(script.src).host;
-      if (scriptHost) {
-        // keep only 1st and 2nd level domain
-        innerHost = scriptHost.split('.')
-          .reverse()
-          .splice(0, 2)
-          .reverse()
-          .join('.');
-      }
-    }
-    if (!innerHost || innerHost.startsWith('localhost')) {
-      innerHost = 'hlx.page';
-    }
+    let innerHost = 'hlx.page';
     innerHost = innerPrefix ? `${innerPrefix}.${innerHost}` : null;
     const outerHost = outerPrefix ? `${outerPrefix}.hlx.live` : null;
     return {
       ...cfg,
       innerHost,
       outerHost,
+      purgeHost,
       host: publicHost,
       project: project || 'your Helix Pages project',
     };
@@ -372,80 +366,67 @@ import {
   }
 
   /**
+   * Adds the reload plugin to the sidekick.
+   * @private
+   * @param {Sidekick} sk The sidekick
+   */
+  function addReloadPlugin(sk) {
+    sk.add({
+      id: 'reload',
+      condition: (sidekick) => sidekick.location.host === sidekick.config.innerHost,
+      button: {
+        action: () => {
+          const { location } = sk;
+          const path = location.pathname;
+          sk.showModal('Please wait …', true);
+          sk
+            .publish(path, true)
+            .then((resp) => {
+              if (resp.ok) {
+                window.location.reload();
+              } else {
+                sk.showModal([
+                  `Failed to reload ${path}. Please try again later.`,
+                  JSON.stringify(resp),
+                ], true, 0);
+              }
+            });
+        },
+      },
+    });
+  }
+
+  /**
    * Adds the publish plugin to the sidekick.
    * @private
    * @param {Sidekick} sk The sidekick
    */
   function addPublishPlugin(sk) {
-    async function sendPurge(cfg, path) {
-      /* eslint-disable no-console */
-      console.log(`purging ${path}`);
-      const xfh = [cfg.innerHost];
-      if (cfg.host) {
-        xfh.push(cfg.outerHost);
-        xfh.push(cfg.host);
-      }
-      const u = new URL('https://adobeioruntime.net/api/v1/web/helix/helix-services/purge@v1');
-      u.search = new URLSearchParams([
-        ['host', cfg.innerHost],
-        ['xfh', xfh.join(',')],
-        ['path', path],
-      ]).toString();
-      const resp = await fetch(u, {
-        method: 'POST',
-      });
-      const json = await resp.json();
-      console.log(JSON.stringify(json));
-      /* eslint-enable no-console */
-      return {
-        ok: resp.ok && Array.isArray(json) && json.every((e) => e.status === 'ok'),
-        status: resp.status,
-        json,
-        path,
-      };
-    }
-
     sk.add({
       id: 'publish',
       condition: (sidekick) => sidekick.isHelix() && sidekick.config.host,
       button: {
         action: async () => {
           const { config, location } = sk;
-          if (!config.innerHost) {
-            sk.notify(`Publish is not configured for ${config.project}`, 0);
-            return;
-          }
           const path = location.pathname;
           sk.showModal(`Publishing ${path}`, true);
           let urls = [path];
-          if (path.endsWith('/')) {
-            // directory, also purge index(.html)
-            urls.push(`${path}index`);
-            urls.push(`${path}index.html`);
-          } else if (path.split('/').pop().startsWith('index')) {
-            // index(.html), also purge directory
-            urls.push(path.substring(0, path.lastIndexOf('/') + 1));
-          }
           // purge dependencies
           if (Array.isArray(window.hlx.dependencies)) {
             urls = urls.concat(window.hlx.dependencies);
           }
 
-          const resps = await Promise.all(urls.map((url) => sendPurge(config, url)));
-          if (resps.every((r) => r.ok)) {
-            if (config.host) {
-              sk.showModal('Please wait...', true);
-              // fetch and redirect to production
-              const prodURL = `https://${config.host}${path}`;
-              await fetch(prodURL, { cache: 'reload', mode: 'no-cors' });
-              // eslint-disable-next-line no-console
-              console.log(`redirecting to ${prodURL}`);
-              window.location.href = prodURL;
-            } else {
-              sk.notify('Successfully published');
-            }
+          await Promise.all(urls.map((url) => sk.publish(url)));
+          if (config.host) {
+            sk.showModal('Please wait …', true);
+            // fetch and redirect to production
+            const prodURL = `https://${config.host}${path}`;
+            await fetch(prodURL, { cache: 'reload', mode: 'no-cors' });
+            // eslint-disable-next-line no-console
+            console.log(`redirecting to ${prodURL}`);
+            window.location.href = prodURL;
           } else {
-            sk.showModal(`Failed to publish ${path}. Please try again later.`, true, 0);
+            sk.notify('Successfully published');
           }
         },
       },
@@ -504,6 +485,7 @@ import {
       // default plugins
       addEditPlugin(this);
       addPreviewPlugin(this);
+      addReloadPlugin(this);
       addPublishPlugin(this);
       // custom plugins
       if (this.config.plugins && Array.isArray(this.config.plugins)) {
@@ -761,6 +743,39 @@ import {
       });
       transfer.remove();
       return this;
+    }
+
+    /**
+     * Publishes the page at the specified path if {@code config.host} is defined.
+     * @param {string} path The path of the page to publish
+     * @param {boolean} innerOnly {@code true} to only refresh inner CDN, else {@code false}
+     * @return {publishResponse} The response object
+     */
+    async publish(path, innerOnly = false) {
+      if (!this.config.host) return null;
+      /* eslint-disable no-console */
+      console.log(`purging ${path}`);
+      const xfh = innerOnly
+        ? [this.config.innerHost]
+        : [this.config.innerHost, this.config.outerHost, this.config.host];
+      const u = new URL('https://adobeioruntime.net/api/v1/web/helix/helix-services/purge@v1');
+      u.search = new URLSearchParams([
+        ['host', this.config.purgeHost],
+        ['xfh', xfh.join(',')],
+        ['path', path],
+      ]).toString();
+      const resp = await fetch(u, {
+        method: 'POST',
+      });
+      const json = await resp.json();
+      console.log(JSON.stringify(json));
+      /* eslint-enable no-console */
+      return {
+        ok: resp.ok && Array.isArray(json) && json.every((e) => e.status === 'ok'),
+        status: resp.status,
+        json,
+        path,
+      };
     }
   }
 
