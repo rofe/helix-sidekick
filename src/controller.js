@@ -99,7 +99,7 @@ function injectConfigPicker(configs, config, matches, display) {
       removeConfigPicker();
     });
     picker.appendChild(closeBtn);
-    document.body.append(picker);
+    document.body.insertBefore(picker, document.body.firstElementChild);
     picker.querySelector('button').focus();
     document.addEventListener('keyup', pickConfigByKey);
   } else if (!display) {

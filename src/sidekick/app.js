@@ -105,7 +105,8 @@ import {
     const innerPrefix = ref && !['master', 'main'].includes(ref)
       ? `${ref}--${outerPrefix}`
       : outerPrefix;
-    const purgeHost = `${ref}--${outerPrefix}.hlx.page`;
+    // host param for purge request must include ref
+    const purgeHost = outerPrefix ? `${ref}--${outerPrefix}.hlx.page` : null;
     const publicHost = host && host.startsWith('http') ? new URL(host).host : host;
     let innerHost = 'hlx.page';
     innerHost = innerPrefix ? `${innerPrefix}.${innerHost}` : null;
@@ -244,8 +245,10 @@ import {
    * @param {elemConfig}  config The tag configuration
    * @returns {HTMLElement} The new tag
    */
-  function appendTag(parent, config) {
-    return makeAccessible(parent.appendChild(createTag(config)));
+  function appendTag(parent, config, before) {
+    return makeAccessible(before
+      ? parent.insertBefore(createTag(config), before)
+      : parent.appendChild(createTag(config)));
   }
 
   /**
@@ -315,7 +318,7 @@ import {
   function addPreviewPlugin(sk) {
     sk.add({
       id: 'preview',
-      condition: (sidekick) => sidekick.isEditor() || (sidekick.isHelix() && sidekick.config.host),
+      condition: (sidekick) => sidekick.isEditor() || sidekick.isOuter(),
       button: {
         action: () => {
           const { config, location } = sk;
@@ -373,7 +376,7 @@ import {
   function addReloadPlugin(sk) {
     sk.add({
       id: 'reload',
-      condition: (sidekick) => sidekick.location.host === sidekick.config.innerHost,
+      condition: (s) => s.config.purgeHost && (s.isInner() || s.isDev()),
       button: {
         action: () => {
           const { location } = sk;
@@ -448,7 +451,7 @@ import {
         attrs: {
           class: 'hlx-sk hlx-sk-hidden hlx-sk-empty',
         },
-      });
+      }, document.body.firstElementChild);
       this.location = getLocation();
       this.loadCSS();
       // share button
@@ -614,18 +617,45 @@ import {
     }
 
     /**
+     * Checks if the current location is a development URL.
+     * @returns {boolean} <code>true</code> if development URL, else <code>false</code>
+     */
+     isDev() {
+      const { location } = this;
+      return [
+        '', // for unit testing
+        'localhost:3000', // for development and browser testing
+      ].includes(location.host);
+    }
+
+    /**
+     * Checks if the current location is an inner CDN URL.
+     * @returns {boolean} <code>true</code> if inner CDN URL, else <code>false</code>
+     */
+    isInner() {
+      const { config, location } = this;
+      return location.host.startsWith(config.innerHost);
+    }
+
+    /**
+     * Checks if the current location is an outer CDN URL.
+     * @returns {boolean} <code>true</code> if outer CDN URL, else <code>false</code>
+     */
+    isOuter() {
+      const { config, location } = this;
+      return [
+        config.host,
+        config.outerHost,
+      ].includes(location.host);
+    }
+
+    /**
      * Checks if the current location is a configured Helix URL.
      * @returns {boolean} <code>true</code> if Helix URL, else <code>false</code>
      */
     isHelix() {
-      const { config, location } = this;
-      return [
-        '', // for unit testing
-        'localhost:3000', // for browser testing
-        config.host,
-        config.outerHost,
-        config.innerHost,
-      ].includes(location.host);
+      return this.config.owner && this.config.repo
+        && (this.isDev() || this.isInner() || this.isOuter());
     }
 
     /**
