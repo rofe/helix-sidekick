@@ -766,9 +766,9 @@ import {
       if (!Array.isArray(vars)) vars = [vars];
       const transfer = document.createElement('script');
       transfer.id = 'hlx-sk-global-transfer';
-      document.head.appendChild(transfer);
+      document.body.appendChild(transfer);
       vars.forEach((varName) => {
-        transfer.textContent = `document.getElementById("hlx-sk-global-transfer").setAttribute("data-src",JSON.stringify(${varName}));`;
+        transfer.textContent = `document.getElementById("hlx-sk-global-transfer").setAttribute("data-src",JSON.stringify(window.${varName}));`;
         window[varName] = JSON.parse(transfer.getAttribute("data-src"));
       });
       transfer.remove();
@@ -815,5 +815,7 @@ import {
   // launch sidekick
   if (!window.hlx.sidekick) {
     window.hlx.sidekick = new Sidekick().toggle();
+    // load hlx config from content window
+    setTimeout(() => window.hlx.sidekick.copyGlobal('hlx'), 500);
   }
 })();
