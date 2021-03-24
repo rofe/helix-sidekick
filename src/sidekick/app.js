@@ -769,7 +769,11 @@ import {
       document.body.appendChild(transfer);
       vars.forEach((varName) => {
         transfer.textContent = `document.getElementById("hlx-sk-global-transfer").setAttribute("data-src",JSON.stringify(window.${varName}));`;
-        window[varName] = JSON.parse(transfer.getAttribute("data-src"));
+        let varValue;
+        try {
+          varValue = JSON.parse(transfer.getAttribute("data-src"));
+        } catch (e) {}
+        window[varName] = varValue;
       });
       transfer.remove();
       return this;
