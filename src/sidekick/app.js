@@ -816,6 +816,6 @@ import {
   if (!window.hlx.sidekick) {
     window.hlx.sidekick = new Sidekick().toggle();
     // load hlx config from content window
-    setTimeout(() => window.hlx.sidekick.copyGlobal('hlx'), 500);
+    setTimeout(() => window.hlx.sidekick.copyGlobal('hlx'), 100);
   }
 })();
