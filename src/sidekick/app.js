@@ -13,10 +13,6 @@
 
 'use strict';
 
-import {
-  setDisplay,
-}  from '../utils.js';
-
 (() => {
   /**
    * @typedef {Object.<string, string>} elemAttr
@@ -43,6 +39,7 @@ import {
    * a shorthand for {@link elemConfig}.
    * @prop {string}   text   The button text
    * @prop {Function} action The click listener
+   * @prop {boolean|Function} isPressed Determines whether the button is pressed
    */
 
   /**
@@ -68,6 +65,7 @@ import {
    * @prop {string} repo    The GitHub owner or organization (mandatory)
    * @prop {string} ref=main The Git reference or branch (optional)
    * @prop {string} host    The production host name (optional)
+   * @prop {string} byocdn=false {@code true} if the production host is a 3rd party CDN (optional)
    * @prop {string} project The name of the Helix project (optional)
    */
 
@@ -88,6 +86,18 @@ import {
    */
 
   /**
+   * Mapping between the plugin IDs that will be treated as environments
+   * and their corresponding host properties in the config.
+   * @private
+   */
+  const ENVS = {
+    edit: 'editor',
+    preview: 'innerHost',
+    live: 'outerHost',
+    prod: 'host',
+  };
+
+  /**
    * Returns the sidekick configuration based on {@link window.hlx.sidekickConfig}.
    * @private
    * @returns {Object} The sidekick configuration
@@ -97,25 +107,46 @@ import {
       ? window.hlx.sidekickConfig
       : window.hlxSidekickConfig) || {};
     const {
-      owner, repo, ref, host, project,
+      owner, repo, ref = 'main', host, project, hlx3,
     } = cfg;
-    const outerPrefix = owner && repo
+    const ghDetails = owner && repo
       ? `${repo}--${owner}`
       : null;
-    const innerPrefix = ref && !['master', 'main'].includes(ref)
-      ? `${ref}--${outerPrefix}`
-      : outerPrefix;
+    const innerPrefix = ghDetails ? `${ref}--${ghDetails}` : null;
     // host param for purge request must include ref
-    const purgeHost = outerPrefix ? `${ref}--${outerPrefix}.hlx.page` : null;
     const publicHost = host && host.startsWith('http') ? new URL(host).host : host;
-    let innerHost = 'hlx.page';
+    const script = document.querySelector('script[src$="/sidekick/app.js"]');
+    const scriptUrl = script && script.src;
+    let innerHost;
+    if (hlx3) {
+      // force hlx3.page
+      innerHost = 'hlx3.page';
+    }
+    if (!innerHost || innerHost.startsWith('localhost')) {
+      // get hlx domain from script src (used for branch deployment testing)
+      if (scriptUrl) {
+        const scriptHost = new URL(scriptUrl).host;
+        if (scriptHost && scriptHost !== 'www.hlx.live') {
+          // keep only 1st and 2nd level domain
+          innerHost = scriptHost.split('.')
+            .reverse()
+            .splice(0, 2)
+            .reverse()
+            .join('.');
+        }
+      }
+      // fall back to hlx.page
+      innerHost = 'hlx.page';
+    }
     innerHost = innerPrefix ? `${innerPrefix}.${innerHost}` : null;
-    const outerHost = outerPrefix ? `${outerPrefix}.hlx.live` : null;
+    const outerHost = publicHost && ghDetails ? `${ghDetails}.hlx.live` : null;
     return {
       ...cfg,
+      ref,
       innerHost,
       outerHost,
-      purgeHost,
+      purgeHost: innerHost, // backward compatibility
+      scriptUrl,
       host: publicHost,
       project: project || 'your Helix Pages project',
     };
@@ -243,6 +274,7 @@ import {
    * @private
    * @param {HTMLElement} parent The parent element
    * @param {elemConfig}  config The tag configuration
+   * @param {HTMLElement} before The element to insert before (optional)
    * @returns {HTMLElement} The new tag
    */
   function appendTag(parent, config, before) {
@@ -255,13 +287,17 @@ import {
    * Returns the share URL for the sidekick bookmarklet.
    * @private
    * @param {Object} config The sidekick configuration
+   * @param {string} from The URL of the referrer page
    * @returns {string} The share URL
    */
-  function getShareUrl(config) {
-    const shareUrl = new URL('https://www.hlx.page/tools/sidekick/');
+  function getShareUrl(config, from) {
+    const shareUrl = new URL('https://www.hlx.live/tools/sidekick/');
     shareUrl.search = new URLSearchParams([
       ['project', config.project || ''],
       ['host', config.host || ''],
+      ['byocdn', !!config.byocdn],
+      ['hlx3', !!config.hlx3],
+      ['from', from || ''],
       ['giturl', `https://github.com/${config.owner}/${config.repo}${config.ref ? `/tree/${config.ref}` : ''}`],
     ]).toString();
     return shareUrl.toString();
@@ -294,76 +330,185 @@ import {
    * @param {Sidekick} sk The sidekick
    */
   function checkForUpdates(sk) {
-    window.setTimeout(() => {
-      // check for legacy config property
-      if (typeof window.hlxSidekickConfig === 'object') {
+    // check for wrong byocdn config
+    // https://github.com/adobe/helix-pages/issues/885
+    if (sk.config.byocdn && sk.config.host
+      && sk.config.host.includes('.adobe.')
+      && !sk.config.host.startsWith('www.')) {
+      sk.config.byocdn = false;
+      sk.updateRequired = true;
+    }
+    const indicators = [
+      // legacy config
+      typeof window.hlxSidekickConfig === 'object',
+      // legacy script host
+      !sk.config.scriptUrl || new URL(sk.config.scriptUrl).host === 'www.hlx.page',
+      // update flag
+      sk.updateRequired,
+    ];
+    if (indicators.includes(true)) {
+      window.setTimeout(() => {
         // eslint-disable-next-line no-alert
-        if (window.confirm('Good news! There is a newer version of the Helix Sidekick Bookmarklet available!\n\nDo you want to install it now? It will only take a minute ...')) {
-          sk.showModal('Please wait...', true);
-          const url = new URL(getShareUrl(sk.config));
-          const params = new URLSearchParams(url.search);
-          params.set('from', sk.location.href);
-          url.search = params.toString();
-          window.location.href = url.toString();
+        if (window.confirm('Good news! There is a newer version of the Helix Sidekick Bookmarklet available!\n\nDo you want to install it now? It will only take a minute …')) {
+          sk.showModal('Please wait …', true);
+          window.location.href = getShareUrl(sk.config, sk.location.href);
         }
+      }, 1000);
+    }
+    // hlx3 cmpatibility check
+    if (sk.location.hostname.endsWith('hlx3.page') && !sk.config.hlx3) {
+      window.setTimeout(() => {
+        // eslint-disable-next-line no-alert
+        if (window.confirm('Your Helix Sidekick Bookmarklet is not able to deal with a Helix 3 site.\n\nPress OK to install one for Helix 3 now!')) {
+          sk.showModal('Please wait …', true);
+          // set hlx3 flag
+          sk.config.hlx3 = true;
+          window.location.href = getShareUrl(sk.config, sk.location.href);
+        }
+      }, 1000);
+    }
+  }
+
+  /**
+   * Determines whether to open a new tab or reuse the existing window.
+   * @param {Event} evt The event
+   * @returns {@code true} if a new tab should be opened, else {@code false}
+   */
+  function newTab(evt) {
+    return evt.metaKey || evt.shiftKey || evt.which === 2;
+  }
+
+  /**
+   * Switches to or opens a given environment.
+   * @param {Sidekick} sidekick The sidekick
+   * @param {string} targetEnv One of the following environments:
+   *        {@code edit}, {@code preview}, {@code live} or {@code production}
+   * @param {boolean} open=false {@code true} if environment should be opened in new tab
+   */
+  async function gotoEnv(sidekick, targetEnv, open) {
+    const { config, location } = sidekick;
+    const {
+      owner,
+      repo,
+      ref,
+    } = config;
+    const hostType = ENVS[targetEnv];
+    if (!hostType) {
+      return;
+    }
+    let url = `https://admin.hlx3.page/${owner}/${repo}/${ref}`;
+    if (targetEnv === 'edit') {
+      // resolve editor url
+      const path = location.pathname;
+      const file = path.split('/').pop() || 'index'; // use 'index' if no filename
+      let editPath;
+      if (file.endsWith('.html')) {
+        editPath = path.replace(/\.html$/, '.lnk');
+      } else if (!file.includes('.')) {
+        editPath = `${path.endsWith(file) ? path : `${path}${file}`}.lnk`;
       }
-    }, 1000);
-  }
-
-  /**
-   * Adds the preview plugin to the sidekick.
-   * @private
-   * @param {Sidekick} sk The sidekick
-   */
-  function addPreviewPlugin(sk) {
-    sk.add({
-      id: 'preview',
-      condition: (sidekick) => sidekick.isEditor() || sidekick.isOuter(),
-      button: {
-        action: () => {
-          const { config, location } = sk;
-          let url;
-          if (sk.isEditor()) {
-            url = new URL('https://adobeioruntime.net/api/v1/web/helix/helix-services/content-proxy@v2');
-            url.search = new URLSearchParams([
-              ['owner', config.owner],
-              ['repo', config.repo],
-              ['ref', config.ref || 'main'],
-              ['path', '/'],
-              ['lookup', location.href],
-            ]).toString();
-          } else {
-            const host = location.host === config.innerHost ? config.host : config.innerHost;
-            url = new URL(`https://${host}${location.pathname}`);
+      url += new URL(editPath, location.href).pathname;
+    } else if (sidekick.isEditor()) {
+      // resolve target env from editor url
+      url += `/hlx_${btoa(location.href).replace(/\+/, '-').replace(/\//, '_')}.lnk`;
+      // fetch report, extract url and patch host
+      try {
+        const resp = await fetch(`${url}&hlx_report=true`);
+        if (resp.ok) {
+          const { webUrl } = await resp.json();
+          if (webUrl) {
+            const u = new URL(webUrl);
+            u.hostname = config[hostType];
+            u.pathname = u.pathname === '/index' ? '/' : u.pathname;
+            url = u.toString();
           }
-          window.open(url.toString(), `hlx-sk-preview-${btoa(location.href)}`);
-        },
-      },
-    });
+        }
+      } catch (e) {
+        // something went wrong
+      }
+    } else {
+      // resolve target env from any env
+      url = `https://${config[hostType]}${location.pathname}`;
+    }
+
+    // switch or open env
+    if (!url) {
+      return;
+    }
+    if (open) {
+      window.open(url);
+    } else {
+      window.location.href = url;
+    }
   }
 
   /**
-   * Adds the edit plugin to the sidekick.
+   * Adds the following environment plugins to the sidekick:
+   * Edit, Preview, Live and Production
    * @private
    * @param {Sidekick} sk The sidekick
    */
-  function addEditPlugin(sk) {
+  function addEnvPlugins(sk) {
+    // edit
     sk.add({
       id: 'edit',
-      condition: (sidekick) => sidekick.isHelix(),
+      condition: (sidekick) => sidekick.isEditor() || sidekick.isHelix(),
       button: {
-        action: () => {
-          const { config, location } = sk;
-          const url = new URL('https://adobeioruntime.net/api/v1/web/helix/helix-services/content-proxy@v2');
-          url.search = new URLSearchParams([
-            ['owner', config.owner],
-            ['repo', config.repo],
-            ['ref', config.ref || 'main'],
-            ['path', '/'],
-            ['edit', location.href],
-          ]).toString();
-          window.open(url, `hlx-sk-edit-${btoa(location.href)}`);
+        action: async (evt) => {
+          if (evt.target.classList.contains('pressed')) {
+            return;
+          }
+          await gotoEnv(sk, 'edit', newTab(evt));
         },
+        isPressed: (sidekick) => sidekick.isEditor(),
+      },
+    });
+
+    // preview
+    sk.add({
+      id: 'preview',
+      condition: (sidekick) => sidekick.isEditor() || sidekick.isHelix(),
+      button: {
+        action: async (evt) => {
+          if (evt.target.classList.contains('pressed')) {
+            return;
+          }
+          await gotoEnv(sk, 'preview', newTab(evt));
+        },
+        isPressed: (sidekick) => sidekick.isInner(),
+      },
+    });
+
+    // live
+    sk.add({
+      id: 'live',
+      condition: (sidekick) => sidekick.config.outerHost
+        && (sidekick.isEditor() || sidekick.isHelix()),
+      button: {
+        action: async (evt) => {
+          if (evt.target.classList.contains('pressed')) {
+            return;
+          }
+          await gotoEnv(sk, 'live', newTab(evt));
+        },
+        isPressed: (sidekick) => sidekick.isOuter(),
+      },
+    });
+
+    // production
+    sk.add({
+      id: 'prod',
+      condition: (sidekick) => sidekick.config.host
+        && sidekick.config.host !== sidekick.config.outerHost
+        && (sidekick.isEditor() || sidekick.isHelix()),
+      button: {
+        action: async (evt) => {
+          if (evt.target.classList.contains('pressed')) {
+            return;
+          }
+          await gotoEnv(sk, 'prod', newTab(evt));
+        },
+        isPressed: (sidekick) => sidekick.isProd(),
       },
     });
   }
@@ -376,24 +521,27 @@ import {
   function addReloadPlugin(sk) {
     sk.add({
       id: 'reload',
-      condition: (s) => s.config.purgeHost && (s.isInner() || s.isDev()),
+      condition: (s) => s.config.innerHost && (s.isInner() || s.isDev()),
       button: {
-        action: () => {
+        action: async (evt) => {
           const { location } = sk;
-          const path = location.pathname;
           sk.showModal('Please wait …', true);
-          sk
-            .publish(path, true)
-            .then((resp) => {
-              if (resp && resp.ok) {
-                window.location.reload();
-              } else {
-                sk.showModal([
-                  `Failed to reload ${path}. Please try again later.`,
-                  JSON.stringify(resp),
-                ], true, 0);
-              }
-            });
+          const resp = sk.reload(location.pathname);
+          if (!resp.ok) {
+            // eslint-disable-next-line no-console
+            console.error(resp);
+            sk.showModal([
+              `Failed to reload ${location.pathname}. Please try again later.`,
+            ], true, 0);
+          }
+          // eslint-disable-next-line no-console
+          console.log(`reloading ${location.href}`);
+          if (newTab(evt)) {
+            window.open(window.location.href);
+            sk.hideModal();
+          } else {
+            window.location.reload();
+          }
         },
       },
     });
@@ -407,9 +555,10 @@ import {
   function addPublishPlugin(sk) {
     sk.add({
       id: 'publish',
-      condition: (sidekick) => sidekick.isHelix() && sidekick.config.host,
+      condition: (sidekick) => sidekick.isHelix() && sidekick.config.host
+        && !(sidekick.config.byocdn && sidekick.location.host === sidekick.config.host),
       button: {
-        action: async () => {
+        action: async (evt) => {
           const { config, location } = sk;
           const path = location.pathname;
           sk.showModal(`Publishing ${path}`, true);
@@ -418,18 +567,18 @@ import {
           if (Array.isArray(window.hlx.dependencies)) {
             urls = urls.concat(window.hlx.dependencies);
           }
-
           await Promise.all(urls.map((url) => sk.publish(url)));
-          if (config.host) {
-            sk.showModal('Please wait …', true);
-            // fetch and redirect to production
-            const prodURL = `https://${config.host}${path}`;
-            await fetch(prodURL, { cache: 'reload', mode: 'no-cors' });
-            // eslint-disable-next-line no-console
-            console.log(`redirecting to ${prodURL}`);
-            window.location.href = prodURL;
+          sk.showModal('Please wait …', true);
+          // fetch and redirect to production
+          const prodURL = `https://${config.byocdn ? config.outerHost : config.host}${path}`;
+          await fetch(prodURL, { cache: 'reload', mode: 'no-cors' });
+          // eslint-disable-next-line no-console
+          console.log(`redirecting to ${prodURL}`);
+          if (newTab(evt)) {
+            window.open(prodURL);
+            sk.hideModal();
           } else {
-            sk.notify('Successfully published');
+            window.location.href = prodURL;
           }
         },
       },
@@ -445,14 +594,13 @@ import {
      * {@link window.hlx.sidekickConfig}.
      */
     constructor() {
-      this.config = initConfig();
       this.root = appendTag(document.body, {
         tag: 'div',
         attrs: {
           class: 'hlx-sk hlx-sk-hidden hlx-sk-empty',
         },
-      }, document.body.firstElementChild);
-      this.location = getLocation();
+      });
+      this.loadContext();
       this.loadCSS();
       // share button
       const share = appendTag(this.root, {
@@ -479,36 +627,38 @@ import {
           class: 'close',
         },
         lstnrs: {
-          click: () => {
-            setDisplay(false);
-            this.hide();
-          },
+          click: () => this.toggle(),
         },
       });
       // default plugins
-      addEditPlugin(this);
-      addPreviewPlugin(this);
+      addEnvPlugins(this);
       addReloadPlugin(this);
       addPublishPlugin(this);
       // custom plugins
       if (this.config.plugins && Array.isArray(this.config.plugins)) {
         this.config.plugins.forEach((plugin) => this.add(plugin));
       }
-      if (this.isHelix() || this.isEditor()) {
-        const prefix = this.config.pluginHost || (this.isEditor() ? `https://${this.config.innerHost}` : location.origin);
-        const pluginsUrl = `${prefix}${prefix.endsWith('/') ? '' : '/'}tools/sidekick/plugins.js`;
-        const port = chrome.runtime.connect({ name: chrome.runtime.id });
-        port.postMessage({ pluginsUrl });
+      if ((this.isHelix() || this.isEditor())
+        && (this.config.pluginHost || this.config.innerHost)) {
+        const prefix = this.config.pluginHost || (this.isEditor() ? `https://${this.config.innerHost}` : '');
+        appendTag(document.head, {
+          tag: 'script',
+          attrs: {
+            src: `${prefix}/tools/sidekick/plugins.js`,
+          },
+        });
       }
       checkForUpdates(this);
     }
 
     /**
-     * Shows/hides the sidekick.
+     * Loads the sidekick configuration based on {@link window.hlx.sidekickConfig}
+     * and retrieves the location of the current document.
      * @returns {Sidekick} The sidekick
      */
-    toggle() {
-      this.root.classList.toggle('hlx-sk-hidden');
+    loadContext() {
+      this.config = initConfig();
+      this.location = getLocation();
       return this;
     }
 
@@ -536,45 +686,91 @@ import {
     }
 
     /**
+     * Shows/hides the sidekick.
+     * @returns {Sidekick} The sidekick
+     */
+    toggle() {
+      this.root.classList.toggle('hlx-sk-hidden');
+      return this;
+    }
+
+    /**
      * Adds a plugin to the sidekick.
      * @param {plugin} plugin The plugin configuration.
      * @returns {HTMLElement} The plugin
      */
     add(plugin) {
       if (typeof plugin === 'object') {
-        if (plugin.override) {
-          this.remove(plugin.id);
-        }
+        plugin.enabled = typeof plugin.condition === 'undefined'
+          || (typeof plugin.condition === 'function' && plugin.condition(this));
+        // find existing plugin
         let $plugin = this.get(plugin.id);
-        if (typeof plugin.condition === 'function' && !plugin.condition(this)) {
-          if ($plugin) $plugin.remove();
-          return this;
+        let $pluginContainer = this.root;
+        if (ENVS[plugin.id]) {
+          // find or create environment plugin container
+          $pluginContainer = this.root.querySelector('.env');
+          if (!$pluginContainer) {
+            $pluginContainer = appendTag(this.root, {
+              tag: 'div',
+              attrs: {
+                class: 'env',
+              },
+            });
+          }
         }
-        if (!$plugin) {
-          $plugin = appendTag(this.root, {
-            tag: 'div',
-            attrs: {
-              class: plugin.id,
-            },
-          });
-          this.root.classList.remove('hlx-sk-empty');
+        const pluginCfg = {
+          tag: 'div',
+          attrs: {
+            class: plugin.id,
+          },
+        };
+        if (!$plugin && plugin.enabled) {
+          // add new plugin
+          $plugin = appendTag($pluginContainer, pluginCfg);
+          // remove empty text
+          if (this.root.classList.contains('hlx-sk-empty')) {
+            this.root.classList.remove('hlx-sk-empty');
+          }
+        } else if ($plugin) {
+          if (!plugin.enabled) {
+            // remove existing plugin
+            $plugin.remove();
+          } else if (plugin.override) {
+            // replace existing plugin
+            const $existingPlugin = $plugin;
+            $plugin = appendTag($existingPlugin.parentElement, pluginCfg, $existingPlugin);
+            $existingPlugin.remove();
+          }
         }
+        if (!plugin.enabled) {
+          return null;
+        }
+        // add elements
         if (Array.isArray(plugin.elements)) {
           plugin.elements.forEach((elem) => appendTag($plugin, elem));
         }
+        // add or update button
         if (plugin.button) {
-          const cfg = {
+          const buttonCfg = {
             tag: 'button',
             text: plugin.button.text,
             lstnrs: {
               click: plugin.button.action,
+              auxclick: plugin.button.action,
             },
           };
-          const $button = $plugin.querySelector(cfg.tag);
+          let $button = $plugin ? $plugin.querySelector(buttonCfg.tag) : null;
           if ($button) {
-            extendTag($button, cfg);
+            // extend existing button
+            extendTag($button, buttonCfg);
           } else {
-            appendTag($plugin, cfg);
+            // add button
+            $button = appendTag($plugin, buttonCfg);
+          }
+          // check if button is pressed
+          if ((typeof plugin.button.isPressed === 'boolean' && !!plugin.button.isPressed)
+            || (typeof plugin.button.isPressed === 'function' && plugin.button.isPressed(this))) {
+            $button.classList.add('pressed');
           }
         }
         if (typeof plugin.callback === 'function') {
@@ -620,7 +816,7 @@ import {
      * Checks if the current location is a development URL.
      * @returns {boolean} <code>true</code> if development URL, else <code>false</code>
      */
-     isDev() {
+    isDev() {
       const { location } = this;
       return [
         '', // for unit testing
@@ -634,7 +830,12 @@ import {
      */
     isInner() {
       const { config, location } = this;
-      return location.host.startsWith(config.innerHost);
+      const hasRef = location.host.split('--').length === 3;
+      return config.innerHost === location.host
+        // match without ref
+        || (!hasRef && config.innerHost.endsWith(location.host))
+        // match with any ref
+        || (hasRef && config.innerHost.endsWith(location.host.substring(location.host.indexOf('--') + 2)));
     }
 
     /**
@@ -643,10 +844,16 @@ import {
      */
     isOuter() {
       const { config, location } = this;
-      return [
-        config.host,
-        config.outerHost,
-      ].includes(location.host);
+      return config.outerHost === location.host;
+    }
+
+    /**
+     * Checks if the current location is a production URL.
+     * @returns {boolean} <code>true</code> if production URL, else <code>false</code>
+     */
+    isProd() {
+      const { config, location } = this;
+      return config.host === location.host;
     }
 
     /**
@@ -655,7 +862,7 @@ import {
      */
     isHelix() {
       return this.config.owner && this.config.repo
-        && (this.isDev() || this.isInner() || this.isOuter());
+        && (this.isDev() || this.isInner() || this.isOuter() || this.isProd());
     }
 
     /**
@@ -733,7 +940,15 @@ import {
      * @returns {Sidekick} The sidekick
      */
     loadCSS(path) {
-      const href = path || chrome.runtime.getURL('sidekick/app.css');
+      let href = path;
+      if (!href) {
+        if (this.config.scriptUrl) {
+          href = this.config.scriptUrl.replace('.js', '.css');
+        } else {
+          const filePath = this.location.pathname;
+          href = `${filePath.substring(filePath.lastIndexOf('/') + 1).split('.')[0]}.css`;
+        }
+      }
       appendTag(document.head, {
         tag: 'link',
         attrs: {
@@ -757,26 +972,31 @@ import {
     }
 
     /**
-     * Copies global variables from the content window to the {@code window}
-     * object in the extension sandbox so the sidekick can access them.
-     * @param {string|string[]} vars The names of the global variables
-     * @returns {Sidekick} The sidekick
+     * Reloads the page at the specified path.
+     * @param {string} path The path of the page to publish
+     * @return {Response} The response object
      */
-    copyGlobal(vars) {
-      if (!Array.isArray(vars)) vars = [vars];
-      const transfer = document.createElement('script');
-      transfer.id = 'hlx-sk-global-transfer';
-      document.body.appendChild(transfer);
-      vars.forEach((varName) => {
-        transfer.textContent = `document.getElementById("hlx-sk-global-transfer").setAttribute("data-src",JSON.stringify(window.${varName}));`;
-        let varValue;
-        try {
-          varValue = JSON.parse(transfer.getAttribute("data-src"));
-        } catch (e) {}
-        window[varName] = varValue;
-      });
-      transfer.remove();
-      return this;
+    async reload(path) {
+      const { config } = this;
+      let resp;
+      if (config.hlx3) {
+        const adminURL = [
+          'https://admin.hlx3.page',
+          `/${config.owner}`,
+          `/${config.repo}`,
+          `/${config.ref}`,
+          path,
+          '?action=update',
+        ].join('');
+        resp = await fetch(adminURL, { method: 'POST' });
+      } else {
+        resp = await this.publish(path, true);
+      }
+      return {
+        ok: resp.ok,
+        status: resp.status,
+        path,
+      };
     }
 
     /**
@@ -786,30 +1006,60 @@ import {
      * @return {publishResponse} The response object
      */
     async publish(path, innerOnly = false) {
-      if (!innerOnly && !this.config.host) return null;
-      const purgeURL = new URL(path, this.location.href);
-      const pathname = `${purgeURL.pathname}${purgeURL.search}`;
       /* eslint-disable no-console */
-      console.log(`purging ${pathname}`);
-      const xfh = innerOnly
-        ? [this.config.innerHost]
-        : [this.config.innerHost, this.config.outerHost, this.config.host];
-      const u = new URL('https://adobeioruntime.net/api/v1/web/helix/helix-services/purge@v1');
-      u.search = new URLSearchParams([
-        ['host', this.config.purgeHost],
-        ['xfh', xfh.join(',')],
-        ['path', path],
-      ]).toString();
-      const resp = await fetch(u, {
-        method: 'POST',
-      });
-      const json = await resp.json();
-      console.log(JSON.stringify(json));
+      const { config, location } = this;
+
+      if ((!innerOnly && !config.host)
+        || (config.byocdn && location.host === config.host)) {
+        return null;
+      }
+
+      const purgeURL = new URL(path, location.href);
+      let ok;
+      let status;
+      let json;
+
+      if (config.hlx3) {
+        const adminURL = [
+          'https://admin.hlx3.page',
+          `/${config.owner}`,
+          `/${config.repo}`,
+          `/${config.ref}`,
+          purgeURL.pathname,
+          '?action=publish',
+        ].join('');
+        console.log(`publishing ${adminURL}`);
+        const resp = await fetch(adminURL, { method: 'POST' });
+        ok = resp.ok;
+        status = resp.status;
+      } else {
+        console.log(`purging ${purgeURL.href}`);
+        const xfh = [config.innerHost];
+        if (!innerOnly) {
+          if (config.outerHost) {
+            xfh.push(config.outerHost);
+          }
+          if (config.host && !config.byocdn) {
+            xfh.push(config.host);
+          }
+        }
+        const resp = await fetch(purgeURL.href, {
+          method: 'POST',
+          headers: {
+            'X-Method-Override': 'HLXPURGE',
+            'X-Forwarded-Host': xfh.join(', '),
+          },
+        });
+        json = await resp.json();
+        console.log(JSON.stringify(json));
+        ok = resp.ok && Array.isArray(json) && json.every((e) => e.status === 'ok');
+        status = resp.status;
+      }
       /* eslint-enable no-console */
       return {
-        ok: resp.ok && Array.isArray(json) && json.every((e) => e.status === 'ok'),
-        status: resp.status,
-        json,
+        ok,
+        status,
+        json: json || {},
         path,
       };
     }
@@ -818,8 +1068,6 @@ import {
   window.hlx = window.hlx || {};
   // launch sidekick
   if (!window.hlx.sidekick) {
-    window.hlx.sidekick = new Sidekick().toggle();
-    // load hlx config from content window
-    setTimeout(() => window.hlx.sidekick.copyGlobal('hlx'), 100);
+    window.hlx.sidekick = new Sidekick().show();
   }
 })();
